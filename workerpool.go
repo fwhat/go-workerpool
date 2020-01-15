@@ -31,10 +31,8 @@ func (w Worker) Start() {
 				// 收到新的job任务 开始执行
 				job.Run(w)
 				w.OnSuccessChannel <- w
-				return
 			case <-w.quit:
 				// 收到退出信号
-				w.OnSuccessChannel <- w
 				return
 			}
 		}
@@ -78,20 +76,14 @@ func (d *Dispatcher) Run() {
 //调度
 func (d *Dispatcher) dispatch() {
 	for {
-		select {
-		// 得到空闲worker
-		case worker := <-d.FreeWorkers:
-			go func(worker Worker) {
-				for {
-					select {
-					case job := <-d.PendingJobs:
-						// 得到 pending 中的job 并 通知worker开始执行
-						worker.JobChannel <- job
-						return
-					}
-				}
-
-			}(worker)
+		// 判断是否有空闲worker
+		if len(d.FreeWorkers) > 0 {
+			select {
+			// 得到 pending 中的job 和 空闲的worker， 并通知worker开始执行
+			case job := <-d.PendingJobs:
+				worker := <-d.FreeWorkers
+				worker.JobChannel <- job
+			}
 		}
 	}
 }
