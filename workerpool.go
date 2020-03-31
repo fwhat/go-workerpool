@@ -6,21 +6,21 @@ type Job interface {
 
 // execute process
 type Worker struct {
-	OnSuccessChannel chan<- Worker    // worker执行完成通知 Channel
-	JobExitChan      chan<- Job       // job执行完成通知 Channel
-	JobChannel       chan Job         // 新job分配 Channel
-	quit             chan interface{} // 退出信号
-	no               int              // worker编号
+	onSuccessChan chan<- Worker    // worker执行完成通知 Channel
+	jobExitChan   chan<- Job       // job执行完成通知 Channel
+	jobChannel    chan Job         // 新job分配 Channel
+	quit          chan interface{} // 退出信号
+	no            int              // worker编号
 }
 
 //创建一个新worker
-func NewWorker(successChannel chan Worker, no int, JobExitChan chan Job) Worker {
+func NewWorker(successChan chan Worker, no int, jobExitChan chan Job) Worker {
 	return Worker{
-		JobExitChan:      JobExitChan,
-		OnSuccessChannel: successChannel,
-		JobChannel:       make(chan Job),
-		quit:             make(chan interface{}),
-		no:               no,
+		jobExitChan:   jobExitChan,
+		onSuccessChan: successChan,
+		jobChannel:    make(chan Job),
+		quit:          make(chan interface{}),
+		no:            no,
 	}
 }
 
@@ -29,11 +29,11 @@ func (w Worker) Start() {
 	go func() {
 		for {
 			select {
-			case job := <-w.JobChannel:
+			case job := <-w.jobChannel:
 				// 收到新的job任务 开始执行
 				job.Run(w)
-				w.JobExitChan <- job
-				w.OnSuccessChannel <- w
+				w.jobExitChan <- job
+				w.onSuccessChan <- w
 			case <-w.quit:
 				// 收到退出信号
 				return
@@ -98,7 +98,7 @@ func (d *Dispatcher) dispatch() {
 		// 得到 pending 中的job 和 空闲的worker， 并通知worker开始执行
 		job := <-d.PendingJobs
 
-		worker.JobChannel <- job
+		worker.jobChannel <- job
 	}
 }
 
