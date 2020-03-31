@@ -46,3 +46,21 @@ func TestStopJob(t *testing.T) {
 	job.Stop()
 	dispatcher.Wait()
 }
+
+func TestOnJobFinished(t *testing.T) {
+	MaxWorker := 1
+	dispatcher := go_workerpool.NewDispatcher(MaxWorker, 0, func(job go_workerpool.Job) {
+		t.Logf("get callback %d", job.(*JobHandleContext).Id)
+	})
+	dispatcher.Run()
+	job := &JobHandleContext{Id: 1}
+	if !dispatcher.TryEnqueue(job) {
+		t.Errorf("job %d: 加入JobQueue队列 失败", job.Id)
+	}
+	time.Sleep(time.Second)
+	if job.Stop == nil {
+		t.Errorf("job %d: init stop error", job.Id)
+	}
+	job.Stop()
+	dispatcher.Wait()
+}

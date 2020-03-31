@@ -12,21 +12,21 @@ type Job interface {
 
 // execute process
 type Worker struct {
-	onSuccessChan   chan<- Worker   // worker执行完成通知 Channel
-	jobFinishedChan chan<- Job      // job执行完成通知 Channel
-	jobChannel      chan Job        // 新job分配 Channel
-	no              int             // worker编号
-	wg              *sync.WaitGroup // wait group
+	onSuccessChan chan<- Worker   // worker执行完成通知 Channel
+	onJobFinished func(Job)       // job执行完成通知 Channel
+	jobChannel    chan Job        // 新job分配 Channel
+	no            int             // worker编号
+	wg            *sync.WaitGroup // wait group
 }
 
 //创建一个新worker
-func NewWorker(successChan chan Worker, no int, jobExitChan chan Job, wg *sync.WaitGroup) Worker {
+func NewWorker(successChan chan Worker, no int, onJobFinished func(Job), wg *sync.WaitGroup) Worker {
 	return Worker{
-		jobFinishedChan: jobExitChan,
-		onSuccessChan:   successChan,
-		jobChannel:      make(chan Job),
-		no:              no,
-		wg:              wg,
+		onJobFinished: onJobFinished,
+		onSuccessChan: successChan,
+		jobChannel:    make(chan Job),
+		no:            no,
+		wg:            wg,
 	}
 }
 
@@ -37,9 +37,10 @@ func (w Worker) Start(ctx context.Context) {
 		case job := <-w.jobChannel:
 			// 收到新的job任务 开始执行
 			job.Run(w)
-			if w.jobFinishedChan != nil {
-				w.jobFinishedChan <- job
+			if w.onJobFinished != nil {
+				w.onJobFinished(job)
 			}
+
 			w.onSuccessChan <- w
 		case <-ctx.Done():
 			log.Println("cancel")
@@ -53,7 +54,7 @@ func (w Worker) Start(ctx context.Context) {
 //调度中心
 type Dispatcher struct {
 	// on job exit
-	OnJobExit chan Job
+	OnJobExit func(Job)
 	// 空闲的worker
 	FreeWorkers chan Worker
 	// 所有worker实例
@@ -67,7 +68,7 @@ type Dispatcher struct {
 }
 
 //创建调度中心
-func NewDispatcher(maxWorkers int, maxPendingJobs int, onJobExit chan Job) *Dispatcher {
+func NewDispatcher(maxWorkers int, maxPendingJobs int, onJobExit func(Job)) *Dispatcher {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &Dispatcher{
 		FreeWorkers: make(chan Worker, maxWorkers),
