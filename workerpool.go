@@ -6,15 +6,17 @@ type Job interface {
 
 // execute process
 type Worker struct {
-	OnSuccessChannel chan Worker      // worker执行完成通知 Channel
+	OnSuccessChannel chan<- Worker    // worker执行完成通知 Channel
+	JobExitChan      chan<- Job       // job执行完成通知 Channel
 	JobChannel       chan Job         // 新job分配 Channel
 	quit             chan interface{} // 退出信号
 	no               int              // worker编号
 }
 
 //创建一个新worker
-func NewWorker(successChannel chan Worker, no int) Worker {
+func NewWorker(successChannel chan Worker, no int, JobExitChan chan Job) Worker {
 	return Worker{
+		JobExitChan:      JobExitChan,
 		OnSuccessChannel: successChannel,
 		JobChannel:       make(chan Job),
 		quit:             make(chan interface{}),
@@ -30,6 +32,7 @@ func (w Worker) Start() {
 			case job := <-w.JobChannel:
 				// 收到新的job任务 开始执行
 				job.Run(w)
+				w.JobExitChan <- job
 				w.OnSuccessChannel <- w
 			case <-w.quit:
 				// 收到退出信号
@@ -46,6 +49,8 @@ func (w Worker) Stop() {
 
 //调度中心
 type Dispatcher struct {
+	// on job exit
+	OnJobExit chan Job
 	// 空闲的worker
 	FreeWorkers chan Worker
 	// 所有worker实例
@@ -55,14 +60,29 @@ type Dispatcher struct {
 }
 
 //创建调度中心
-func NewDispatcher(maxWorkers int, maxPendingJobs int) *Dispatcher {
-	return &Dispatcher{FreeWorkers: make(chan Worker, maxWorkers), PendingJobs: make(chan Job, maxPendingJobs)}
+func NewDispatcher(maxWorkers int, maxPendingJobs int, onJobExit chan Job) *Dispatcher {
+	if onJobExit == nil {
+		onJobExit = make(chan Job, maxWorkers)
+		go func() {
+			for {
+				select {
+				case <-onJobExit:
+				}
+			}
+		}()
+	}
+
+	return &Dispatcher{
+		FreeWorkers: make(chan Worker, maxWorkers),
+		PendingJobs: make(chan Job, maxPendingJobs),
+		OnJobExit:   onJobExit,
+	}
 }
 
 //工作者池的初始化
 func (d *Dispatcher) Run() {
 	for i := 1; i < cap(d.FreeWorkers)+1; i++ {
-		worker := NewWorker(d.FreeWorkers, i)
+		worker := NewWorker(d.FreeWorkers, i, d.OnJobExit)
 		worker.Start()
 
 		d.FreeWorkers <- worker

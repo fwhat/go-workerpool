@@ -42,10 +42,20 @@ func addQueue(dispatcher *go_workerpool.Dispatcher) (jobs []*Job) {
 func main() {
 	MaxWorker := 5
 	MaxPending := 10
-	dispatcher := go_workerpool.NewDispatcher(MaxWorker, MaxPending)
+	OnJobExit := make(chan go_workerpool.Job, 5)
+	dispatcher := go_workerpool.NewDispatcher(MaxWorker, MaxPending, nil)
 	dispatcher.Run()
 	log.Printf("初始化队列数: %d", len(dispatcher.Workers))
 	log.Printf("当前协程数: %d", runtime.NumGoroutine())
+
+	go func() {
+		for {
+			select {
+			case job := <-OnJobExit:
+				log.Printf("job [%d] exit.", job.(*Job).Id)
+			}
+		}
+	}()
 
 	go func(dispatcher *go_workerpool.Dispatcher) {
 		for {
